@@ -10,3 +10,4 @@ plotly
 requests
 python-dotenv
 pyproj
+matplotlib
