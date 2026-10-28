@@ -19,7 +19,6 @@ from services.copernicus import (
     search_sentinel2,
     download_sentinel2_bands,
 )
-from services.dem import analyze_terrain
 from services.landcover import analyze_landcover
 from services.historical_vegetation import run_historical_change_detection
 from services.climate_stress import fetch_climate_series, add_climate_anomalies
@@ -53,6 +52,78 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown("""
+<style>
+/* Environmental Forensics — glassmorphism workspace */
+:root { --ef-glass: rgba(255,255,255,.075); --ef-line: rgba(255,255,255,.16); }
+.stApp {
+  background:
+    radial-gradient(ellipse at 12% 4%, rgba(31, 151, 137, .22), transparent 36%),
+    radial-gradient(ellipse at 88% 12%, rgba(74, 109, 210, .20), transparent 34%),
+    linear-gradient(135deg, #07131d 0%, #0b1824 48%, #101b2a 100%);
+  background-attachment: fixed;
+}
+[data-testid="stHeader"] { background: rgba(5, 14, 22, .25); backdrop-filter: blur(18px); }
+[data-testid="stToolbar"] { right: 1rem; }
+.block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 1500px; }
+h1, h2, h3 { letter-spacing: -.035em; }
+h1 { font-weight: 760; background: linear-gradient(100deg,#f4fbff 10%,#a9eee1 55%,#a8c5ff 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
+h2, h3 { color: #e7f4ff; }
+p, label, [data-testid="stCaptionContainer"] { line-height: 1.55; }
+/* Translucent panels */
+div[data-testid="stVerticalBlockBorderWrapper"],
+div[data-testid="stExpander"],
+div[data-testid="stForm"],
+div[data-testid="stDataFrame"],
+div[data-testid="stTable"],
+div[data-testid="stMetric"],
+div[data-testid="stAlert"] {
+  border: 1px solid var(--ef-line) !important;
+  border-radius: 18px !important;
+  background: var(--ef-glass) !important;
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  box-shadow: 0 10px 34px rgba(0,0,0,.13), inset 0 1px 0 rgba(255,255,255,.055);
+}
+div[data-testid="stMetric"] { padding: 14px 16px; transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease; }
+div[data-testid="stMetric"]:hover { transform: translateY(-3px); border-color: rgba(127,220,211,.48) !important; box-shadow: 0 15px 35px rgba(0,0,0,.2); }
+div[data-testid="stMetricValue"] { font-weight: 720; }
+/* Inputs */
+.stTextInput input, .stNumberInput input, .stDateInput input, .stSelectbox div[data-baseweb="select"],
+.stMultiSelect div[data-baseweb="select"], .stTextArea textarea {
+  border-radius: 12px !important;
+  background: rgba(8, 19, 30, .62) !important;
+  border-color: rgba(177,208,232,.2) !important;
+}
+/* Buttons */
+.stButton > button, .stFormSubmitButton > button, .stDownloadButton > button {
+  border-radius: 12px !important;
+  border: 1px solid rgba(152,226,218,.32) !important;
+  background: linear-gradient(120deg, rgba(28,132,124,.9), rgba(54,105,171,.9)) !important;
+  color: #f6ffff !important; font-weight: 650 !important;
+  box-shadow: 0 7px 20px rgba(0,0,0,.18);
+  transition: transform .18s ease, filter .18s ease, box-shadow .18s ease;
+}
+.stButton > button:hover, .stFormSubmitButton > button:hover, .stDownloadButton > button:hover {
+  transform: translateY(-2px); filter: brightness(1.12); box-shadow: 0 12px 26px rgba(0,0,0,.24);
+}
+.stButton > button:active, .stFormSubmitButton > button:active { transform: translateY(0) scale(.99); }
+/* Stage navigation */
+div[role="radiogroup"] { gap: .45rem; padding: .55rem; border-radius: 16px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.10); }
+div[role="radiogroup"] label { padding: .5rem .75rem; border-radius: 11px; transition: background .2s ease; }
+/* Tabs, expanders and tables */
+.stTabs [data-baseweb="tab-list"] { gap: .4rem; }
+.stTabs [data-baseweb="tab"] { border-radius: 10px 10px 0 0; }
+div[data-testid="stExpander"] { overflow: hidden; }
+div[data-testid="stDataFrame"] { padding: .25rem; }
+hr { border-color: rgba(200,225,245,.13) !important; }
+/* Smooth reveal without hiding content */
+@keyframes efFadeUp { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+[data-testid="stVerticalBlock"] > div { animation: efFadeUp .32s ease both; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🌍 Environmental Forensics & Climate Intelligence")
 st.caption(
     "Analyze an area, compare satellite and climate indicators, and investigate possible environmental causes."
@@ -80,8 +151,6 @@ DEFAULTS = {
     "search_message": None,
     "download_message": None,
     "ndvi_message": None,
-    "terrain_result": None,
-    "terrain_message": None,
     "landcover_result": None,
     "landcover_message": None,
     "historical_change_result": None,
@@ -250,8 +319,6 @@ def invalidate_analysis():
     st.session_state.latest_ndvi_raster = None
     st.session_state.download_message = None
     st.session_state.ndvi_message = None
-    st.session_state.terrain_result = None
-    st.session_state.terrain_message = None
     st.session_state.historical_change_result = None
     st.session_state.historical_change_message = None
     st.session_state.cause_attribution_result = None
@@ -550,155 +617,6 @@ if active_stage == STAGES[0]:
                 with st.expander("Data access notes"):
                     for warning in lc_result["landcover"]["warnings"]:
                         st.write("- " + warning)
-
-
-
-
-    # ============================================================
-    # 6. STEP 3 — TERRAIN ANALYSIS (RUNS AFTER AOI CONFIRMATION)
-    # ============================================================
-
-    st.subheader("Terrain & Elevation")
-    st.caption("Optional elevation and slope context for the selected area.")
-
-    if not st.session_state.confirmed_aoi:
-        st.info("Draw and confirm an area above to enable terrain analysis.")
-    else:
-        st.caption(
-            f"Selected area: {st.session_state.confirmed_area_km2:,.3f} km². "
-            "Terrain analysis is independent of Sentinel-2 retrieval."
-        )
-
-        terrain_col1, terrain_col2 = st.columns([2, 1])
-        with terrain_col1:
-            terrain_grid_size = st.select_slider(
-                "Terrain sample density",
-                options=[5, 7, 9, 10],
-                value=9,
-                help=(
-                    "Higher density samples more points but may take longer. "
-                    "This preliminary service supports up to 100 points per request."
-                ),
-                key="terrain_grid_size",
-            )
-        with terrain_col2:
-            st.write("")
-            st.write("")
-            run_terrain = st.button(
-                "Run Terrain Analysis",
-                type="primary",
-                use_container_width=True,
-            )
-
-        if run_terrain:
-            try:
-                with st.spinner("Retrieving elevation samples and estimating terrain..."):
-                    terrain_result = analyze_terrain(
-                        geometry=st.session_state.confirmed_aoi,
-                        grid_size=int(terrain_grid_size),
-                    )
-                st.session_state.terrain_result = terrain_result
-                st.session_state.terrain_message = None
-            except Exception as exc:
-                st.session_state.terrain_result = None
-                st.session_state.terrain_message = str(exc)
-
-        if st.session_state.terrain_message:
-            st.error(f"Terrain analysis failed: {st.session_state.terrain_message}")
-
-        terrain_result = st.session_state.terrain_result
-        if terrain_result:
-            st.subheader("Terrain Summary")
-            metric_cols = st.columns(4)
-            metric_cols[0].metric(
-                "Minimum elevation",
-                f"{terrain_result['elevation_min_m']:.1f} m",
-            )
-            metric_cols[1].metric(
-                "Mean elevation",
-                f"{terrain_result['elevation_mean_m']:.1f} m",
-            )
-            metric_cols[2].metric(
-                "Maximum elevation",
-                f"{terrain_result['elevation_max_m']:.1f} m",
-            )
-            metric_cols[3].metric(
-                "Elevation range",
-                f"{terrain_result['elevation_range_m']:.1f} m",
-            )
-
-            slope_col, aspect_col, samples_col = st.columns(3)
-            slope_mean = terrain_result.get("slope_mean_degrees")
-            slope_max = terrain_result.get("slope_max_degrees")
-            aspect_mean = terrain_result.get("aspect_mean_degrees")
-            slope_col.metric(
-                "Estimated mean slope",
-                f"{slope_mean:.2f}°" if slope_mean is not None else "Unavailable",
-            )
-            slope_col.caption(
-                f"Estimated maximum slope: {slope_max:.2f}°"
-                if slope_max is not None else
-                "Not enough adjacent samples to estimate slope."
-            )
-            aspect_col.metric(
-                "Mean aspect estimate",
-                f"{aspect_mean:.1f}°" if aspect_mean is not None else "Unavailable",
-            )
-            aspect_col.caption("Compass bearing: 0° north, 90° east, 180° south.")
-            samples_col.metric("Valid elevation samples", terrain_result["sample_count"])
-
-            terrain_fig, terrain_ax = plt.subplots(figsize=(10, 5.5))
-            points = terrain_ax.scatter(
-                terrain_result["longitudes"],
-                terrain_result["latitudes"],
-                c=terrain_result["elevations_m"],
-                cmap="terrain",
-                s=55,
-                edgecolors="black",
-                linewidths=0.25,
-            )
-            terrain_ax.set_title("Elevation Samples Within the Selected AOI")
-            terrain_ax.set_xlabel("Longitude")
-            terrain_ax.set_ylabel("Latitude")
-            terrain_ax.grid(alpha=0.2)
-            terrain_colorbar = terrain_fig.colorbar(points, ax=terrain_ax)
-            terrain_colorbar.set_label("Elevation (m)")
-            terrain_fig.tight_layout()
-            st.pyplot(terrain_fig)
-            plt.close(terrain_fig)
-
-            st.warning(terrain_result["warning"])
-            st.caption(
-                f"Elevation source: {terrain_result['source']} | "
-                f"Method: {terrain_result['method']}"
-            )
-
-            terrain_csv = pd.DataFrame({
-                "latitude": terrain_result["latitudes"],
-                "longitude": terrain_result["longitudes"],
-                "elevation_m": terrain_result["elevations_m"],
-            }).to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download terrain elevation samples (CSV)",
-                data=terrain_csv,
-                file_name="terrain_elevation_samples.csv",
-                mime="text/csv",
-                key="download_terrain_samples",
-            )
-
-            with st.expander("How to interpret these results"):
-                st.markdown(
-                    """
-                    - **Elevation** is height above the elevation model's reference datum.
-                    - **Slope** estimates the local steepness from neighbouring samples.
-                    - **Aspect** estimates the downslope compass direction.
-                    - Steeper slopes can influence runoff and erosion, but these
-                      measurements alone do not establish flood or erosion risk.
-                    - This is a coarse screening result, not a validated high-resolution
-                      DEM analysis. Use a suitable DEM for detailed terrain modelling.
-                    """
-                )
-
 
 
 
@@ -1490,40 +1408,6 @@ elif active_stage == STAGES[2]:
             soil_value = latest_row.get("soil_moisture_0_7cm", float("nan"))
             m4.metric("Mean topsoil moisture", f"{soil_value:.3f} m³/m³" if pd.notna(soil_value) else "Unavailable")
 
-            st.subheader("Annual climate indicators")
-            plot_col1, plot_col2 = st.columns(2)
-            with plot_col1:
-                fig, ax = plt.subplots(figsize=(8, 4.5))
-                ax.bar(annual_climate["year"], annual_climate["rainfall_mm"])
-                ax.axhline(baseline_rows["rainfall_mm"].mean(), linestyle="--", label="Baseline mean")
-                ax.set_title("Annual precipitation")
-                ax.set_xlabel("Year")
-                ax.set_ylabel("Rainfall (mm)")
-                ax.legend()
-                fig.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
-            with plot_col2:
-                fig, ax = plt.subplots(figsize=(8, 4.5))
-                ax.bar(annual_climate["year"], annual_climate["temperature_anomaly_c"])
-                ax.axhline(0, linestyle="--")
-                ax.set_title("Mean temperature anomaly")
-                ax.set_xlabel("Year")
-                ax.set_ylabel("Anomaly (°C)")
-                fig.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
-
-            fig, ax = plt.subplots(figsize=(10, 4.5))
-            ax.plot(monthly_climate["month_start"], monthly_climate["rainfall_mm"], label="Monthly rainfall (mm)")
-            ax.set_title("Monthly precipitation timeline")
-            ax.set_xlabel("Month")
-            ax.set_ylabel("Rainfall (mm)")
-            ax.legend()
-            fig.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
-
             st.subheader("Annual anomaly table")
             display_cols = [
                 "year", "rainfall_mm", "rainfall_anomaly_mm", "rainfall_anomaly_pct",
@@ -1773,10 +1657,6 @@ else:
                 o3.metric("Decline overlapping water proxy", f"{overlap['decline_to_water_ha']:.2f} ha" if overlap.get("decline_to_water_ha") is not None else "Unavailable")
             st.caption(overlap.get("message", "Spatial overlap not available."))
 
-            st.subheader("Limitations and interpretation")
-            for limitation in attribution["limitations"]:
-                st.write("• " + limitation)
-
             report = {
                 "investigation_year": attribution["target_year"],
                 "vegetation_summary": v,
@@ -1807,7 +1687,7 @@ else:
 
     st.divider()
     st.header("Final Environmental Interpretation")
-    st.caption("Summarizes observed changes, plausible explanations, supporting or conflicting evidence, and limitations. Causes are not treated as proven.")
+    st.caption("Summarizes observed changes, plausible explanations, and supporting or conflicting evidence. Potential causes remain hypotheses until verified.")
 
     interpret_hist = st.session_state.get("historical_change_result")
     interpret_climate = st.session_state.get("climate_stress_result")
@@ -1856,9 +1736,6 @@ else:
                 st.write("• " + evidence_line)
             st.subheader("Baseline and comparison periods")
             st.dataframe(pd.DataFrame([{"Item": k, "Value": v} for k, v in interpretation["baseline_context"].items()]), use_container_width=True, hide_index=True)
-            st.subheader("Interpretation limitations")
-            for limitation in interpretation["limitations"]:
-                st.write("• " + limitation)
             import json
             interpretation_report = {
                 "investigation_year": interpretation["investigation_year"],
@@ -1889,8 +1766,7 @@ else:
     st.divider()
     st.header("Automated Forensic Report")
     st.caption(
-        "Generate a consolidated PDF from completed analyses. The report includes available maps, "
-        "charts, measured changes, possible causes, evidence, limitations, and recommended actions."
+        "Generate a consolidated PDF from completed analyses, including available maps, measured changes, evidence, and recommended actions."
     )
 
     st.subheader("Gemini Environmental Prevention & Action Plan")
