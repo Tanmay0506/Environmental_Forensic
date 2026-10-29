@@ -47,7 +47,7 @@ PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 NDVI_OUTPUT = PROCESSED_DIR / "ndvi_latest.tif"
 
 st.set_page_config(
-    page_title="Environmental Forensics & Climate Intelligence",
+    page_title="AI-Powered Environmental Forensics & Climate Intelligence",
     page_icon="🌍",
     layout="wide",
 )
