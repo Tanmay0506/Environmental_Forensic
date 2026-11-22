@@ -11,3 +11,4 @@ streamlit-folium
 matplotlib
 reportlab
 google-genai
+python-dotenv
